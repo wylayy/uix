@@ -5,16 +5,20 @@ x86_64, [Limine](https://github.com/limine-bootloader/limine) boot protocol.
 
 Licensed under the GNU GPL v3 (or later): see [LICENSE](LICENSE).
 
-## Status: M1 (interrupts)
+## Status: M2 (memory management)
 
 - Boots (BIOS + UEFI) via Limine, higher-half kernel at `0xffffffff80100000`
 - Serial console (16550 UART) + framebuffer console (8x8 font, double-scanned)
 - `kprintf`/`panic` (subset: `%c %s %d %u %x %X %p %%`, field width)
-- Limine memmap + HHDM parsed, freestanding lib
 - Own GDT/TSS (IST for double fault/NMI), 256-entry IDT, exception dump
 - Local APIC + IOAPIC (keyboard routed), legacy PIC disabled
 - Periodic LAPIC timer at 100 Hz, calibrated against PIT channel 2
 - PS/2 keyboard (scancode set 1) echoing to console
+- PMM: bitmap allocator over the Limine memmap
+- VMM: page tables cloned from Limine then switched (own CR3),
+  map/unmap/translate (4KiB and 2MiB leaves), page fault decode
+- Kernel heap: kmalloc/kfree/kzalloc, first-fit with coalescing
+- Boot self-test: PMM alloc/free, VMM map/canary/unmap, heap checksum
 
 ```
 uix v0.1: microkernel + POSIX personality
@@ -25,7 +29,6 @@ uix v0.1: microkernel + POSIX personality
 
 | M | Scope |
 |---|-------|
-| M2 | PMM (bitmap from Limine memmap), VMM (4-level paging, COW-ready), heap |
 | M3 | scheduler, context switch, kernel tasks |
 | M4 | IPC ports, ring 3, ELF loader, syscalls |
 | M5 | POSIX personality: VFS, ramfs/devfs, fd table, fork/execve (static ELF) |

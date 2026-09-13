@@ -17,6 +17,8 @@ SECTIONS
     /* Topmost 2GiB (higher half), Limine-mandated region. */
     . = 0xffffffff80100000;
 
+    _kernel_start = .;
+
     .limine_requests : ALIGN(8)
     {
         KEEP(*(.limine_requests_start))
@@ -31,6 +33,7 @@ SECTIONS
         KEEP(*(.text.boot))
         *(.text .text.*)
     } :text
+    _text_end = .;
 
     . = ALIGN(CONSTANT(MAXPAGESIZE));
 
@@ -38,6 +41,7 @@ SECTIONS
     {
         *(.rodata .rodata.*)
     } :rodata
+    _rodata_end = .;
 
     . = ALIGN(CONSTANT(MAXPAGESIZE));
 
@@ -51,6 +55,10 @@ SECTIONS
         *(.bss .bss.*)
         *(COMMON)
     } :data
+
+    _kernel_end = .;
+    _kernel_phys_start = _kernel_start - 0xffffffff80000000;
+    _kernel_phys_end = _kernel_end - 0xffffffff80000000;
 
     /DISCARD/ :
     {

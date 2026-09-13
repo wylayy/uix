@@ -141,16 +141,17 @@ static void dump_frame(struct iframe *fr)
             (void *)fr->rax, (void *)fr->rbx, (void *)fr->rcx, (void *)fr->rdx);
     kprintf("RSI=%p RDI=%p RBP=%p ERR=%p\n",
             (void *)fr->rsi, (void *)fr->rdi, (void *)fr->rbp, (void *)fr->err);
-    if (fr->int_no == 14) {
-        u64 cr2;
-        __asm__ volatile ("mov %%cr2, %0" : "=r"(cr2));
-        kprintf("CR2=%p (fault address)\n", (void *)cr2);
-    }
 }
 
 void isr_dispatch(struct iframe *fr)
 {
     if (fr->int_no < 32) {
+        if (fr->int_no == 14) {
+            u64 cr2;
+            __asm__ volatile ("mov %%cr2, %0" : "=r"(cr2));
+            extern void vmm_page_fault(u64, u64);
+            vmm_page_fault(cr2, fr->err);
+        }
         kprintf(KLOG_ERR "exception %u (%s) in ring %u\n",
                 (u32)fr->int_no,
                 exc_name[fr->int_no] ? exc_name[fr->int_no] : "?",
