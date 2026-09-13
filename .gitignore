@@ -1,0 +1,16 @@
+# build artifacts
+build/
+*.o
+*.d
+*.elf
+*.iso
+
+# vendored host tool binary
+boot/limine/limine-install
+
+# editors / OS
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
