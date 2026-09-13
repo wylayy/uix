@@ -5,12 +5,16 @@ x86_64, [Limine](https://github.com/limine-bootloader/limine) boot protocol.
 
 Licensed under the GNU GPL v3 (or later): see [LICENSE](LICENSE).
 
-## Status: M0 (hello world)
+## Status: M1 (interrupts)
 
 - Boots (BIOS + UEFI) via Limine, higher-half kernel at `0xffffffff80100000`
 - Serial console (16550 UART) + framebuffer console (8x8 font, double-scanned)
 - `kprintf`/`panic` (subset: `%c %s %d %u %x %X %p %%`, field width)
 - Limine memmap + HHDM parsed, freestanding lib
+- Own GDT/TSS (IST for double fault/NMI), 256-entry IDT, exception dump
+- Local APIC + IOAPIC (keyboard routed), legacy PIC disabled
+- Periodic LAPIC timer at 100 Hz, calibrated against PIT channel 2
+- PS/2 keyboard (scancode set 1) echoing to console
 
 ```
 uix v0.1: microkernel + POSIX personality
@@ -21,7 +25,6 @@ uix v0.1: microkernel + POSIX personality
 
 | M | Scope |
 |---|-------|
-| M1 | our own GDT/TSS, IDT, exceptions, APIC timer, PS/2 keyboard |
 | M2 | PMM (bitmap from Limine memmap), VMM (4-level paging, COW-ready), heap |
 | M3 | scheduler, context switch, kernel tasks |
 | M4 | IPC ports, ring 3, ELF loader, syscalls |
@@ -54,8 +57,9 @@ tools/       linker.ld, limine.conf
 ```
 
 Third-party (kept under their own licenses, not relicensed):
-`boot/limine/*` and `include/limine.h` (BSD-2-Clause, Limine project),
-`include/std*.h` (freestanding-c-hdrs), font8x8 (public domain).
+`boot/limine/*` binaries and `limine-install.c` (BSD-2-Clause),
+`include/limine.h` and `include/std*.h` (0BSD, Limine project / osdev0),
+font8x8 (Public Domain, Daniel Hepper / Marcel Sondaar).
 
 ## License
 

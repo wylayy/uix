@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
-/* UIX console: serial UART + Limine framebuffer, 8x8 font (public domain,
- * font8x8_basic, Daniel Hepper), double-scanned to a 8x16 cell. */
+/* UIX console: serial UART + Limine framebuffer, 8x8 font (Public Domain,
+ * font8x8_basic by Daniel Hepper, based on work by Marcel Sondaar),
+ * double-scanned to a 8x16 cell. */
 
 #include <uix/console.h>
 #include <uix/serial.h>
@@ -25,8 +26,9 @@ static volatile struct limine_framebuffer *fb;
 #define GLYPH_H 16          /* cell height; font is 8x8, we double-scan rows */
 #define FONT_BYTES_PER_GLYPH 8
 
-/* font8x8_basic: ASCII 0x20..0x7E, public domain (in the public domain via
- * CC0 by its many reusers; origin: Daniel Hepper's font8x8_basic). */
+/* font8x8_basic: ASCII 0x20..0x7E, Public Domain.
+ * From font8x8 by Daniel Hepper <daniel@hepper.net>, based on font8x8.h
+ * by Marcel Sondaar. */
 static const u8 font8x8[95][FONT_BYTES_PER_GLYPH] = {
     {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00}, /* U+0020 (space) */
     {0x18,0x3C,0x3C,0x18,0x18,0x00,0x18,0x00}, /* U+0021 (!) */
