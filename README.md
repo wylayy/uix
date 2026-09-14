@@ -5,7 +5,7 @@ x86_64, [Limine](https://github.com/limine-bootloader/limine) boot protocol.
 
 Licensed under the GNU GPL v3 (or later): see [LICENSE](LICENSE).
 
-## Status: M5 (POSIX personality)
+## Status: M6 (drivers + rootfs)
 
 - Boots (BIOS + UEFI) via Limine, higher-half kernel at `0xffffffff80100000`
 - Serial console (16550 UART) + framebuffer console (8x8 font, double-scanned)
@@ -13,19 +13,19 @@ Licensed under the GNU GPL v3 (or later): see [LICENSE](LICENSE).
 - Own GDT/TSS (IST for double fault/NMI), 256-entry IDT, exception dump
 - Local APIC + IOAPIC (keyboard routed), legacy PIC disabled
 - Timer at 100 Hz: TSC-deadline where supported, periodic LAPIC otherwise
-  (VirtualBox lacks TSC-deadline; detected via CPUID)
 - PS/2 keyboard feeding a tty line discipline (echo, backspace, CR-LF)
-- PMM: bitmap allocator over the Limine memmap
+- PMM: bitmap allocator + contiguous-page runs + page refcounts (COW)
 - VMM: cloned page tables (own CR3), map/unmap/translate (4KiB/2MiB),
-  COW page fault handling
+  copy-on-write fork with refcount-aware fault handling
 - Kernel heap: kmalloc/kfree/kzalloc, first-fit with coalescing
 - Preemptive round-robin scheduler, blocked state, zombie reaping
 - Ring 3 userspace: per-task address spaces, int 0x80 syscalls
 - BSD personality: per-proc fd table, tty, open("/dev/console"),
-  `fork()` with copy-on-write, `execve()` (embedded flat binaries),
-  `wait4()` with real blocking
-- Interactive shell: prompt, line editing, `hello2` command
-  (fork + exec + wait)
+  fork/execve/wait4 with real blocking
+- PCI enumeration (port I/O config space, BAR decode)
+- virtio-blk (legacy virtio-pci): DMA queues over the HHDM, selftest
+- UIXFS read-only rootfs on the attached disk; execve from disk
+- Interactive shell: prompt, line editing, `hello2`, `run <file>`
 
 ```
 uix v0.1: microkernel + POSIX personality
@@ -36,7 +36,8 @@ uix v0.1: microkernel + POSIX personality
 
 | M | Scope |
 |---|-------|
-| M6 | drivers: PCI enum, virtio-blk, page refcounts; rootfs from disk |
+| M7 | ELF64 loader, argv/envp, pipes, kqueue-ish poll; SMP via Limine |
+| M8 | signals, mmap, writeable rootfs, networking (virtio-net) |
 
 ## Build & run
 
