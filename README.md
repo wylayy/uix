@@ -5,22 +5,27 @@ x86_64, [Limine](https://github.com/limine-bootloader/limine) boot protocol.
 
 Licensed under the GNU GPL v3 (or later): see [LICENSE](LICENSE).
 
-## Status: M4 (userspace)
+## Status: M5 (POSIX personality)
 
 - Boots (BIOS + UEFI) via Limine, higher-half kernel at `0xffffffff80100000`
 - Serial console (16550 UART) + framebuffer console (8x8 font, double-scanned)
 - `kprintf`/`panic` (subset: `%c %s %d %u %x %X %p %%`, field width)
 - Own GDT/TSS (IST for double fault/NMI), 256-entry IDT, exception dump
 - Local APIC + IOAPIC (keyboard routed), legacy PIC disabled
-- Timer at 100 Hz via TSC-deadline (calibrated against PIT channel 2)
-- PS/2 keyboard (scancode set 1) echoing to console
+- Timer at 100 Hz: TSC-deadline where supported, periodic LAPIC otherwise
+  (VirtualBox lacks TSC-deadline; detected via CPUID)
+- PS/2 keyboard feeding a tty line discipline (echo, backspace, CR-LF)
 - PMM: bitmap allocator over the Limine memmap
-- VMM: page tables cloned from Limine then switched (own CR3),
-  map/unmap/translate (4KiB and 2MiB leaves), page fault decode
+- VMM: cloned page tables (own CR3), map/unmap/translate (4KiB/2MiB),
+  COW page fault handling
 - Kernel heap: kmalloc/kfree/kzalloc, first-fit with coalescing
-- Preemptive round-robin scheduler with per-task stacks
+- Preemptive round-robin scheduler, blocked state, zombie reaping
 - Ring 3 userspace: per-task address spaces, int 0x80 syscalls
-  (`exit/write/getpid/yield`), embedded demo program
+- BSD personality: per-proc fd table, tty, open("/dev/console"),
+  `fork()` with copy-on-write, `execve()` (embedded flat binaries),
+  `wait4()` with real blocking
+- Interactive shell: prompt, line editing, `hello2` command
+  (fork + exec + wait)
 
 ```
 uix v0.1: microkernel + POSIX personality
@@ -31,8 +36,7 @@ uix v0.1: microkernel + POSIX personality
 
 | M | Scope |
 |---|-------|
-| M5 | POSIX personality: VFS, ramfs/devfs, fd table, fork/execve (static ELF) |
-| M6 | drivers: PCI enum, virtio-blk, NVMe/USB later |
+| M6 | drivers: PCI enum, virtio-blk, page refcounts; rootfs from disk |
 
 ## Build & run
 
