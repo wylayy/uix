@@ -61,11 +61,12 @@ read_again:
     int $0x80
 
 shell_parent:
-    mov $40, %r14
-sw: mov $3, %rax
+    /* wait4(-1, 0, 0, 0): block until the child exits */
+    mov $9, %rax
+    mov $-1, %rdi
+    xor %rsi, %rsi
+    xor %rdx, %rdx
     int $0x80
-    dec %r14
-    jnz sw
     jmp prompt
 
 echo_back:

@@ -25,6 +25,12 @@ struct task *do_fork(struct task *parent, struct iframe *fr)
     child->is_user = 1;
     child->state = TASK_READY;
     child->name = "forked";
+    child->ppid = parent->pid;
+
+    {
+        extern void task_register(struct task *t);
+        task_register(child);
+    }
 
     /* address space: deep copy user half, COW-mark shared pages */
     child->cr3 = vmm_fork_user_space();

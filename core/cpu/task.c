@@ -11,6 +11,38 @@
 
 static u64 next_pid = 1;
 
+/* registry of all tasks (for wait4/zombie lookup) */
+static struct task *all_tasks;
+
+void task_register(struct task *t)
+{
+    t->next_all = all_tasks;
+    all_tasks = t;
+}
+
+struct task *task_find_zombie(u64 ppid, u64 want_pid)
+{
+    for (struct task *t = all_tasks; t; t = t->next_all)
+        if (t->state == TASK_ZOMBIE && t->ppid == ppid &&
+            (want_pid == (u64)-1 || t->pid == want_pid))
+            return t;
+    return NULL;
+}
+
+void task_reap_children(u64 ppid)
+{
+    /* drop registry entries of reaped/dead children of ppid */
+    struct task **pp = &all_tasks;
+    while (*pp) {
+        if ((*pp)->state == TASK_DEAD && (*pp)->ppid == ppid) {
+            struct task *t = *pp;
+            *pp = t->next_all;
+            continue;
+        }
+        pp = &(*pp)->next_all;
+    }
+}
+
 u64 task_alloc_pid(void)
 {
     return next_pid++;
@@ -38,6 +70,7 @@ static struct task *task_alloc(const char *name)
     t->pid = task_alloc_pid();
     t->name = name;
     t->state = TASK_READY;
+    task_register(t);
     return t;
 }
 
@@ -85,7 +118,6 @@ void task_exit(void)
     schedule(); /* never returns */
     __builtin_unreachable();
 }
-
 void task_set_current(struct task *t)
 {
     current = t;

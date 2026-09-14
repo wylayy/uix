@@ -24,7 +24,10 @@ u64 syscall_dispatch(struct iframe *fr)
     case SYS_exit:
         kprintf(KLOG_INFO "pid %u exited with %u\n",
                 (u32)t->pid, (u32)fr->rdi);
-        t->state = TASK_DEAD;
+        t->exit_status = (int)fr->rdi;
+        t->state = TASK_ZOMBIE;
+        extern void task_wakeup_children(u64, u64);
+        task_wakeup_children(t->pid, t->ppid);
         schedule(); /* never returns */
         __builtin_unreachable();
 
@@ -95,6 +98,30 @@ u64 syscall_dispatch(struct iframe *fr)
         extern int do_execve(struct task *t, const char *path);
         int r = do_execve(t, path);
         return (u64)r; /* on success this never returns to user code */
+    }
+
+    case SYS_wait4: {
+        /* wait4(pid, &status, 0, 0): any child (-1) or specific pid.
+         * Returns the reaped pid; status written to *status if given. */
+        u64 want = fr->rdi;
+        u64 status_uptr = fr->rsi;
+
+        for (;;) {
+            extern struct task *task_find_zombie(u64 ppid, u64 want_pid);
+            struct task *z = task_find_zombie(t->pid, want);
+            if (z) {
+                if (status_uptr)
+                    *(u64 *)status_uptr = (u64)z->exit_status;
+                u64 reaped = z->pid;
+                z->state = TASK_DEAD; /* schedule() frees it later */
+                kprintf(KLOG_INFO "wait4: pid %u reaped %u (status %u)\n",
+                        (u32)t->pid, (u32)reaped, (u32)z->exit_status);
+                return reaped;
+            }
+            /* no zombie yet: block until a child exits */
+            extern void task_block_any(void);
+            task_block_any();
+        }
     }
 
     case SYS_yield:

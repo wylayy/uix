@@ -10,6 +10,8 @@
 #define TASK_READY  0
 #define TASK_RUNNING 1
 #define TASK_DEAD   2
+#define TASK_ZOMBIE 3
+#define TASK_BLOCKED 4
 
 /* per-process open file descriptors (BSD-style ofile array) */
 #define PROC_MAX_FDS 16
@@ -33,9 +35,13 @@ struct task {
     paddr_t cr3;      /* 0 = share the kernel space */
     int state;
     int is_user;
+    int exit_status;  /* valid when TASK_ZOMBIE */
+    u64 ppid;         /* parent pid for wait4 */
+    u64 block_on;     /* pid we are waiting on when TASK_BLOCKED */
     const char *name;
     struct proc_fd fds[PROC_MAX_FDS];
-    struct task *next; /* runqueue link */
+    struct task *next;      /* runqueue / blocked-list link */
+    struct task *next_all;  /* all-tasks registry link */
 };
 
 void task_init(void);                 /* creates the bootstrap (idle) task */

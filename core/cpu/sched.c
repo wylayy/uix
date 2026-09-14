@@ -57,6 +57,69 @@ void sched_init(void)
     runqueue_head = runqueue_tail = NULL;
 }
 
+/* tasks blocked in wait4; linked via ->next */
+static struct task *blocked_list;
+
+void task_block(void)
+{
+    struct task *t = task_current();
+    t->state = TASK_BLOCKED;
+    t->next = blocked_list;
+    blocked_list = t;
+    schedule();
+}
+
+/* block until any child of the current task exits (wait4 -1) */
+void task_block_any(void)
+{
+    struct task *t = task_current();
+    t->state = TASK_BLOCKED;
+    t->block_on = 0; /* 0 = any child */
+    t->next = blocked_list;
+    blocked_list = t;
+    schedule();
+}
+
+/* wake tasks blocked on this pid, or blocked-on-any whose pid is
+ * their child: caller passes the exiting pid and its ppid */
+void task_wakeup_children(u64 exiting_pid, u64 exiting_ppid)
+{
+    struct task **pp = &blocked_list;
+    while (*pp) {
+        int match_any = ((*pp)->block_on == 0 &&
+                         (*pp)->pid == exiting_ppid);
+        int match_one = (*pp)->block_on == exiting_pid;
+        if (match_any || match_one) {
+            struct task *t = *pp;
+            *pp = t->next; /* unlink; pp now points at the next slot */
+            t->next = NULL;
+            t->state = TASK_READY;
+            sched_enqueue(t);
+            /* continue scanning: multiple waiters possible */
+        } else {
+            pp = &(*pp)->next;
+        }
+    }
+}
+
+void task_wakeup(u64 pid)
+{
+    struct task **pp = &blocked_list;
+    while (*pp) {
+        if ((*pp)->block_on == pid) {
+            struct task *t = *pp;
+            *pp = t->next;
+            t->next = NULL;
+            t->state = TASK_READY;
+            sched_enqueue(t);
+            return;
+        }
+        pp = &(*pp)->next;
+    }
+}
+
+void task_block_any(void);
+
 void schedule(void)
 {
     struct task *prev = task_current();
@@ -71,7 +134,7 @@ void schedule(void)
 
     struct task *next = dequeue();
     if (!next) {
-        if (prev->state == TASK_DEAD) {
+        if (prev->state == TASK_DEAD || prev->state == TASK_ZOMBIE) {
             /* nothing else to run: halt forever */
             for (;;)
                 __asm__ volatile ("hlt");
@@ -85,6 +148,7 @@ void schedule(void)
     } else if (prev->state == TASK_DEAD) {
         zombie = prev;
     }
+    /* BLOCKED tasks stay in blocked_list; ZOMBIE stays for wait4 */
 
     next->state = TASK_RUNNING;
     task_set_current(next);

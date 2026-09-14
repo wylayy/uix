@@ -16,6 +16,7 @@
 #define SYS_open   6
 #define SYS_fork   7
 #define SYS_execve 8
+#define SYS_wait4  9
 
 void syscall_init(void);
 

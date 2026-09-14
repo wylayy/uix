@@ -21,6 +21,10 @@ void schedule(void);
 /* called from isr_dispatch on vector 32 */
 void sched_tick(void);
 
+/* block the current task until someone calls task_wakeup(pid) */
+void task_block(void);
+void task_wakeup(u64 pid);
+
 void task_yield(void);
 
 #endif /* UIX_SCHED_H */

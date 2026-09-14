@@ -40,6 +40,11 @@ struct task *user_task_create(const char *name, const void *code, u64 len)
     t->fds[2].type = FD_CONSOLE_OUT;
     t->fds[2].in_use = 1;
 
+    {
+        extern void task_register(struct task *t);
+        task_register(t);
+    }
+
     /* fresh address space sharing the kernel half */
     t->cr3 = vmm_create_space();
 
