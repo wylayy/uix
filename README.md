@@ -32,7 +32,6 @@ uix v0.1: microkernel + POSIX personality
 | M | Scope |
 |---|-------|
 | M5 | POSIX personality: VFS, ramfs/devfs, fd table, fork/execve (static ELF) |
-| M5 | POSIX personality: VFS, ramfs/devfs, fd table, fork/execve (static ELF) |
 | M6 | drivers: PCI enum, virtio-blk, NVMe/USB later |
 
 ## Build & run
