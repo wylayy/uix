@@ -32,6 +32,14 @@ struct task *user_task_create(const char *name, const void *code, u64 len)
     t->is_user = 1;
     t->name = name;
 
+    /* stdio: 0=tty in, 1=console out, 2=console out */
+    t->fds[0].type = FD_CONSOLE_IN;
+    t->fds[0].in_use = 1;
+    t->fds[1].type = FD_CONSOLE_OUT;
+    t->fds[1].in_use = 1;
+    t->fds[2].type = FD_CONSOLE_OUT;
+    t->fds[2].in_use = 1;
+
     /* fresh address space sharing the kernel half */
     t->cr3 = vmm_create_space();
 

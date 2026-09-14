@@ -29,9 +29,12 @@ u64 syscall_dispatch(struct iframe *fr)
         __builtin_unreachable();
 
     case SYS_write: {
-        /* write(fd, buf, len): fd ignored (console) for now */
+        /* write(fd, buf, len): console only for now */
+        int fd = (int)fr->rdi;
         const char *buf = (const char *)fr->rsi;
         u64 len = fr->rdx;
+        if (proc_fd_type(t, fd) != FD_CONSOLE_OUT)
+            return (u64)-9; /* -EBADF */
         for (u64 i = 0; i < len; i++)
             console_putc(buf[i]);
         return len;
@@ -39,6 +42,44 @@ u64 syscall_dispatch(struct iframe *fr)
 
     case SYS_getpid:
         return t->pid;
+
+    case SYS_read: {
+        /* read(fd, buf, len): tty line via fd 0 (non-blocking poll) */
+        int fd = (int)fr->rdi;
+        char *buf = (char *)fr->rsi;
+        u64 len = fr->rdx;
+        if (proc_fd_type(t, fd) != FD_CONSOLE_IN)
+            return (u64)-9; /* -EBADF */
+        if (len < 1)
+            return 0;
+        extern void tty_poll(void);
+        extern u32 tty_readline(char *, u32);
+        tty_poll();
+        return tty_readline(buf, (u32)len);
+    }
+
+    case SYS_close: {
+        int fd = (int)fr->rdi;
+        if (proc_fd_type(t, fd) == FD_NONE)
+            return (u64)-9;
+        proc_fd_free(t, fd);
+        return 0;
+    }
+
+    case SYS_open: {
+        /* open(path, flags): only "/dev/console" (rdwr console) */
+        const char *path = (const char *)fr->rdi;
+        static const char cons[] = "/dev/console";
+        u32 i = 0;
+        while (i < sizeof(cons) && path[i] == cons[i]) {
+            if (path[i] == '\0')
+                break;
+            i++;
+        }
+        if (path[i] != '\0' || cons[i] != '\0')
+            return (u64)-2; /* -ENOENT */
+        return proc_fd_alloc(t, FD_CONSOLE_IN); /* console is rdwr */
+    }
 
     case SYS_yield:
         task_yield();

@@ -11,6 +11,9 @@
 #define SYS_write  1
 #define SYS_getpid 2
 #define SYS_yield  3
+#define SYS_read   4
+#define SYS_close  5
+#define SYS_open   6
 
 void syscall_init(void);
 

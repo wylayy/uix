@@ -11,6 +11,20 @@
 #define TASK_RUNNING 1
 #define TASK_DEAD   2
 
+/* per-process open file descriptors (BSD-style ofile array) */
+#define PROC_MAX_FDS 16
+
+enum fd_type {
+    FD_NONE = 0,
+    FD_CONSOLE_IN,  /* keyboard/tty */
+    FD_CONSOLE_OUT, /* serial+fb console */
+};
+
+struct proc_fd {
+    u8 type;    /* enum fd_type */
+    u8 in_use;
+};
+
 struct task {
     u64 pid;
     u64 rsp;          /* saved kernel stack pointer */
@@ -20,10 +34,16 @@ struct task {
     int state;
     int is_user;
     const char *name;
+    struct proc_fd fds[PROC_MAX_FDS];
     struct task *next; /* runqueue link */
 };
 
 void task_init(void);                 /* creates the bootstrap (idle) task */
+
+/* fd helpers: return fd number or negative errno */
+int proc_fd_alloc(struct task *t, u8 type);
+void proc_fd_free(struct task *t, int fd);
+int proc_fd_type(const struct task *t, int fd);
 
 /* spawn a kernel thread running fn(arg); returns the task */
 struct task *task_create(const char *name, void (*fn)(void *), void *arg);

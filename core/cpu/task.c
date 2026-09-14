@@ -91,6 +91,33 @@ void task_set_current(struct task *t)
     current = t;
 }
 
+/* ---------------- fd table ---------------- */
+
+int proc_fd_alloc(struct task *t, u8 type)
+{
+    for (int i = 0; i < PROC_MAX_FDS; i++) {
+        if (!t->fds[i].in_use) {
+            t->fds[i].type = type;
+            t->fds[i].in_use = 1;
+            return i;
+        }
+    }
+    return -24; /* -EMFILE */
+}
+
+void proc_fd_free(struct task *t, int fd)
+{
+    if (fd >= 0 && fd < PROC_MAX_FDS)
+        t->fds[fd].in_use = 0;
+}
+
+int proc_fd_type(const struct task *t, int fd)
+{
+    if (fd < 0 || fd >= PROC_MAX_FDS || !t->fds[fd].in_use)
+        return 0; /* FD_NONE */
+    return t->fds[fd].type;
+}
+
 u64 task_count(void)
 {
     return next_pid - 1;

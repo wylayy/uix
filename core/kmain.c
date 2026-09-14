@@ -14,6 +14,7 @@
 #include <uix/sched.h>
 #include <uix/syscall.h>
 #include <uix/task.h>
+#include <uix/tty.h>
 #include <uix/user.h>
 #include <uix/vmm.h>
 
@@ -84,6 +85,7 @@ void kmain(void)
     selftest_memory();
     apic_init();
     keyboard_init();
+    tty_init();
     syscall_init();
 
     task_init();

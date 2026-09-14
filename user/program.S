@@ -1,54 +1,65 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
-/* UIX first userspace program: raw code at 0x400000, int 0x80 syscalls.
- * Syscall numbers: 0=exit 1=write 2=getpid 3=yield. */
+/* UIX userspace program: mini shell (line echo with prompt).
+ * Syscalls: 0=exit 1=write 2=getpid 3=yield 4=read. */
 
 .section .text
 .code64
 .global entry_point
 entry_point:
-    /* write(1, msg1, 6) */
+    mov $STACK_TOP, %rbp
+    mov %rbp, %rsp
+    sub $256, %rsp
+
+    /* banner */
     mov $1, %rax
     mov $1, %rdi
-    lea msg1(%rip), %rsi
-    mov $6, %rdx
+    lea banner(%rip), %rsi
+    mov $17, %rdx
     int $0x80
 
-    /* yield loop (lazy: sets need_resched, the timer performs the switch) */
-    mov $3, %r13
-yield_loop:
-    mov $3, %rax
+prompt:
+    /* print "uix> " */
+    mov $1, %rax
+    mov $1, %rdi
+    lea promptstr(%rip), %rsi
+    mov $5, %rdx
     int $0x80
-    dec %r13
-    jnz yield_loop
 
-    /* pid = getpid() */
-    mov $2, %rax
+read_again:
+    /* line = read(0, rsp, 128); n in rax -> save in r12 */
+    mov $4, %rax
+    xor %rdi, %rdi
+    mov %rsp, %rsi
+    mov $128, %rdx
     int $0x80
+
+    test %rax, %rax
+    jle idle
     mov %rax, %r12
 
-    /* write(1, msg2, 7) */
+    /* echo it back: write(1, "got: ", 5) then n bytes of the line */
     mov $1, %rax
     mov $1, %rdi
-    lea msg2(%rip), %rsi
-    mov $7, %rdx
+    lea gotstr(%rip), %rsi
+    mov $5, %rdx
     int $0x80
 
-    /* write(1, msg3, 7) */
     mov $1, %rax
     mov $1, %rdi
-    lea msg3(%rip), %rsi
-    mov $7, %rdx
+    mov %rsp, %rsi
+    mov %r12, %rdx
     int $0x80
+    jmp prompt
 
-    /* exit(pid) */
-    mov $0, %rax
-    mov %r12, %rdi
+idle:
+    /* nothing yet: yield, retry WITHOUT reprinting the prompt */
+    mov $3, %rax
     int $0x80
-
-2:  hlt
-    jmp 2b
+    jmp read_again
 
 .section .rodata
-msg1: .ascii "hello\n"
-msg2: .ascii " world\n"
-msg3: .ascii "bye!!\n\n"
+banner:    .ascii "uix echo!\nready:\n"
+promptstr: .ascii "uix> "
+gotstr:    .ascii "got: "
+
+.set STACK_TOP, 0x800000
