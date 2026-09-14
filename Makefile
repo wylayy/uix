@@ -61,8 +61,13 @@ build/user/program.bin: user/program.S
 	$(LD) -Ttext=0 -o build/user/program.elf build/user/program.o
 	objcopy -O binary build/user/program.elf $@
 
-build/rootfs.img: build/user/program.bin build/user/hello2.bin tools/mkuixfs.py
-	python3 tools/mkuixfs.py $@ sh=build/user/program.bin hello2=build/user/hello2.bin
+build/user/elfhello: user/elfhello.c
+	@mkdir -p $(dir $@)
+	$(HOSTCC) -static -nostdlib -nostartfiles -ffreestanding -fno-pic \
+	    -no-pie -mno-red-zone -O2 -o $@ $<
+
+build/rootfs.img: build/user/program.bin build/user/hello2.bin build/user/elfhello tools/mkuixfs.py
+	python3 tools/mkuixfs.py $@ sh=build/user/program.bin hello2=build/user/hello2.bin elfhello=build/user/elfhello
 
 build/$(NAME).elf: $(OBJS) tools/linker.ld
 	$(LD) $(LDFLAGS) -T tools/linker.ld $(OBJS) -o $@
@@ -78,7 +83,7 @@ boot/limine/limine-install: boot/limine/limine-install.c boot/limine/limine-bios
 
 # ---------------- ISO ----------------
 
-iso: build/$(NAME).elf boot/limine/limine-install
+iso: build/$(NAME).elf build/rootfs.img boot/limine/limine-install
 	@mkdir -p build/iso/boot build/iso/uix build/iso/EFI/BOOT
 	cp build/$(NAME).elf build/iso/boot/$(NAME).elf
 	cp boot/limine/limine-bios-cd.bin build/iso/boot/limine-bios-cd.bin
