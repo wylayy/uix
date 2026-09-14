@@ -61,6 +61,9 @@ build/user/program.bin: user/program.S
 	$(LD) -Ttext=0 -o build/user/program.elf build/user/program.o
 	objcopy -O binary build/user/program.elf $@
 
+build/rootfs.img: build/user/program.bin build/user/hello2.bin tools/mkuixfs.py
+	python3 tools/mkuixfs.py $@ sh=build/user/program.bin hello2=build/user/hello2.bin
+
 build/$(NAME).elf: $(OBJS) tools/linker.ld
 	$(LD) $(LDFLAGS) -T tools/linker.ld $(OBJS) -o $@
 

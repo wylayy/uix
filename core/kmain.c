@@ -16,6 +16,7 @@
 #include <uix/syscall.h>
 #include <uix/task.h>
 #include <uix/tty.h>
+#include <uix/uixfs.h>
 #include <uix/user.h>
 #include <uix/virtio_blk.h>
 #include <uix/vmm.h>
@@ -89,11 +90,8 @@ void kmain(void)
     keyboard_init();
     tty_init();
     pci_scan();
-    {
-        extern int virtio_blk_selftest(void);
-        virtio_blk_init();
-        virtio_blk_selftest();
-    }
+    if (virtio_blk_init() == 0)
+        uixfs_mount();
     syscall_init();
 
     task_init();

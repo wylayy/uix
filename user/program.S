@@ -35,27 +35,55 @@ read_again:
     jle idle
     mov %rax, %r12
 
-    /* try commands: "hello2" -> fork+exec /hello2 */
+    /* "hello2\n" -> fork+exec disk/embedded "hello2" */
     lea cmd_hello2(%rip), %rdi
     mov %rsp, %rsi
     mov $7, %rcx
     repe cmpsb
     test %rcx, %rcx
+    jnz try_run
+    /* strip the trailing newline into a NUL */
+    movb $0, 6(%rsp)
+    jmp do_exec
+
+try_run:
+    /* "run x\n" -> fork+exec disk file "x" */
+    lea cmd_run(%rip), %rdi
+    mov %rsp, %rsi
+    mov $4, %rcx
+    repe cmpsb
+    test %rcx, %rcx
     jnz echo_back
 
-    /* fork(); child execs /hello2 */
+    /* copy "x\n" over the line start: shift by -0? name starts
+     * right after "run " (4 chars); copy from rsp+4 to rsp until
+     * newline, NUL-terminate */
+    mov %rsp, %rdi
+    lea 4(%rsp), %rsi
+strip_loop:
+    movzbq (%rsi), %rax
+    cmp $10, %al
+    je strip_done
+    mov %al, (%rdi)
+    inc %rdi
+    inc %rsi
+    jmp strip_loop
+strip_done:
+    movb $0, (%rdi)
+
+do_exec:
+    /* fork(); child execs */
     mov $7, %rax
     int $0x80
     test %rax, %rax
     jnz shell_parent
 
-    /* child: execve("/hello2", 0, 0) */
+    /* child: execve(line, 0, 0); on failure exit(1) */
     mov $8, %rax
-    lea path_hello2(%rip), %rdi
+    mov %rsp, %rdi
     xor %rsi, %rsi
     xor %rdx, %rdx
     int $0x80
-    /* execve failed: exit(1) */
     mov $0, %rax
     mov $1, %rdi
     int $0x80
@@ -96,5 +124,6 @@ childmsg:  .ascii "hello from k"
 parentmsg: .ascii "hello from p\n"
 cmd_hello2: .ascii "hello2\n"
 path_hello2: .ascii "/hello2"
+cmd_run: .ascii "run "
 
 .set STACK_TOP, 0x800000

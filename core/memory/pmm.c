@@ -103,6 +103,54 @@ paddr_t pmm_alloc(void)
     return 0;
 }
 
+/* ---- page refcounts (for COW sharing) ----
+ * One u16 per page in a PMM-backed array; refcount >1 = shared. */
+
+static u16 *refcounts;
+static u64 refcounts_pages;
+
+static void refcounts_grow(u64 page_idx)
+{
+    /* entries are lazily allocated on first touch of a page index */
+    if (refcounts)
+        return;
+    u64 need = (total_pages * 2 + UIX_PAGE_SIZE - 1) / UIX_PAGE_SIZE;
+    refcounts_pages = need;
+    refcounts = pmm_phys_to_virt(pmm_alloc_pages(need));
+    memset(refcounts, 0, need * UIX_PAGE_SIZE);
+}
+
+void pmm_ref(paddr_t page)
+{
+    u64 i = page >> UIX_PAGE_SHIFT;
+    if (i >= total_pages)
+        return;
+    refcounts_grow(i);
+    if (refcounts[i] < 0xFFFF)
+        refcounts[i]++;
+}
+
+void pmm_unref(paddr_t page)
+{
+    u64 i = page >> UIX_PAGE_SHIFT;
+    if (i >= total_pages || !refcounts)
+        return;
+    if (refcounts[i] > 1) {
+        refcounts[i]--;
+        return;
+    }
+    refcounts[i] = 0;
+    pmm_free(page);
+}
+
+u16 pmm_getref(paddr_t page)
+{
+    u64 i = page >> UIX_PAGE_SHIFT;
+    if (i >= total_pages || !refcounts)
+        return 1;
+    return refcounts[i];
+}
+
 paddr_t pmm_alloc_pages(u64 n)
 {
     /* first-fit run of n pages */

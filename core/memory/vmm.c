@@ -231,6 +231,7 @@ static void fork_table(u64 *src, u64 *dst, int level)
                 u64 cow = (e & ~VMM_WRITE) | COW_MARK;
                 src[i] = cow; /* parent loses write too */
                 dst[i] = cow;
+                pmm_ref(e & PTE_MASK); /* shared between spaces */
             } else {
                 dst[i] = e; /* kernel pages: share as-is */
             }
@@ -303,16 +304,23 @@ int vmm_page_fault(u64 fault_addr, u64 err)
             u64 pte = pt[PT_IDX(va)];
             if ((pte & VMM_PRESENT) && (pte & COW_MARK) &&
                 (pte & VMM_USER)) {
-                paddr_t newp = pmm_alloc();
-                if (!newp)
-                    panic("vmm: OOM in COW fault");
-                /* copy the old page content through the HHDM */
-                memcpy(pmm_phys_to_virt(newp),
-                       pmm_phys_to_virt(pte & PTE_MASK),
-                       UIX_PAGE_SIZE);
-                pt[PT_IDX(va)] = (newp & PTE_MASK)
-                               | VMM_PRESENT | VMM_WRITE | VMM_USER
-                               | (pte & VMM_NOEXEC);
+                paddr_t oldp = pte & PTE_MASK;
+                if (pmm_getref(oldp) > 1) {
+                    /* still shared: take a private copy */
+                    paddr_t newp = pmm_alloc();
+                    if (!newp)
+                        panic("vmm: OOM in COW fault");
+                    memcpy(pmm_phys_to_virt(newp),
+                           pmm_phys_to_virt(oldp),
+                           UIX_PAGE_SIZE);
+                    pmm_unref(oldp);
+                    pt[PT_IDX(va)] = (newp & PTE_MASK)
+                                   | VMM_PRESENT | VMM_WRITE | VMM_USER
+                                   | (pte & VMM_NOEXEC);
+                } else {
+                    /* last reference: just make it writable again */
+                    pt[PT_IDX(va)] = (pte & ~COW_MARK) | VMM_WRITE;
+                }
                 __asm__ volatile ("invlpg (%0)" : : "r"(fault_addr) : "memory");
                 return 0; /* handled: retry the faulting write */
             }

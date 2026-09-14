@@ -7,6 +7,7 @@
 #include <uix/lib.h>
 #include <uix/pmm.h>
 #include <uix/task.h>
+#include <uix/uixfs.h>
 #include <uix/user.h>
 #include <uix/vmm.h>
 
@@ -24,7 +25,11 @@ static const struct uxn programs[] = {
     { "/hello2", user_hello2_start,  user_hello2_end },
 };
 
-/* free the page tables of the user half (not the kernel half) */
+/* loaded-from-disk image (owned here, freed after the copy) */
+static void *disk_img;
+static long disk_size;
+
+/* free the page tables of the user half and drop page refs */
 static void free_user_tables(u64 *table, int level)
 {
     for (int i = 0; i < 512; i++) {
@@ -35,6 +40,8 @@ static void free_user_tables(u64 *table, int level)
             free_user_tables(pmm_phys_to_virt(e & 0x000FFFFFFFFFF000ULL),
                              level - 1);
             pmm_free(e & 0x000FFFFFFFFFF000ULL);
+        } else {
+            pmm_unref(e & 0x000FFFFFFFFFF000ULL); /* shared COW-aware */
         }
     }
 }
@@ -43,15 +50,29 @@ static void free_user_tables(u64 *table, int level)
  * returns to the old image (fresh user_enter trampoline) */
 int do_execve(struct task *t, const char *path)
 {
-    const struct uxn *p = NULL;
+    const u8 *img = NULL;
+    u64 len = 0;
+
+    /* embedded table first (leading '/') */
     for (u32 i = 0; i < sizeof(programs) / sizeof(programs[0]); i++)
         if (strcmp(path, programs[i].name) == 0) {
-            p = &programs[i];
+            img = programs[i].start;
+            len = (u64)(programs[i].end - programs[i].start);
             break;
         }
-    if (!p) {
-        kprintf(KLOG_ERR "execve: no such program '%s'\n", path);
-        return -2; /* -ENOENT */
+
+    /* then the disk (bare name, e.g. "hello2") */
+    if (!img) {
+        void *dimg;
+        long dsize = uixfs_read(path, &dimg);
+        if (dsize < 0) {
+            kprintf(KLOG_ERR "execve: no such program '%s'\n", path);
+            return -2; /* -ENOENT */
+        }
+        disk_img = dimg;
+        disk_size = dsize;
+        img = dimg;
+        len = (u64)dsize;
     }
 
     extern paddr_t kernel_cr3;
@@ -74,7 +95,6 @@ int do_execve(struct task *t, const char *path)
     t->cr3 = vmm_create_space();
     vmm_switch(t->cr3);
 
-    u64 len = (u64)(p->end - p->start);
     u64 off = 0;
     while (off < len) {
         paddr_t pg = pmm_alloc();
@@ -83,7 +103,7 @@ int do_execve(struct task *t, const char *path)
         u64 chunk = len - off;
         if (chunk > UIX_PAGE_SIZE)
             chunk = UIX_PAGE_SIZE;
-        memcpy((void *)(USER_CODE_BASE + off), p->start + off, chunk);
+        memcpy((void *)(USER_CODE_BASE + off), img + off, chunk);
         off += UIX_PAGE_SIZE;
     }
     for (u64 va = USER_STACK_TOP - UIX_PAGE_SIZE;
@@ -93,6 +113,11 @@ int do_execve(struct task *t, const char *path)
     }
     /* stay on the new space: the trampoline iretq's into ring 3
      * immediately; the scheduler switches CR3 on the next task change */
+
+    if (disk_img) {
+        kfree(disk_img); /* kernel heap is visible in every space */
+        disk_img = NULL;
+    }
 
     /* reset the kernel stack to the user_launch trampoline frame */
     extern void user_launch_trampoline(void);

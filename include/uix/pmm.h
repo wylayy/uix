@@ -11,6 +11,11 @@ void pmm_init(void);
 paddr_t pmm_alloc(void);          /* returns 0 when out of memory */
 paddr_t pmm_alloc_pages(u64 n);   /* contiguous run of n pages */
 void pmm_free(paddr_t page);
+
+/* page refcounts for copy-on-write sharing */
+void pmm_ref(paddr_t page);
+void pmm_unref(paddr_t page);
+u16 pmm_getref(paddr_t page);
 u64 pmm_free_pages(void);
 
 /* direct physical access through the HHDM */
