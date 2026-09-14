@@ -41,7 +41,17 @@ build/%.o: %.c
 
 # userprog.o embeds program.bin via .incbin: force it to recompile
 # whenever the binary changes (order-only prerequisite + explicit rule)
+build/user/hello2.bin: user/hello2.S
+	@mkdir -p $(dir $@)
+	$(CC) -c user/hello2.S -o build/user/hello2.o
+	$(LD) -Ttext=0 -o build/user/hello2.elf build/user/hello2.o
+	objcopy -O binary build/user/hello2.elf $@
+
 build/arch/x86_64/userprog.o: arch/x86_64/userprog.S build/user/program.bin
+	@mkdir -p $(dir $@)
+	$(CC) $(ASFLAGS) -c $< -o $@
+
+build/arch/x86_64/userprog2.o: arch/x86_64/userprog2.S build/user/hello2.bin
 	@mkdir -p $(dir $@)
 	$(CC) $(ASFLAGS) -c $< -o $@
 

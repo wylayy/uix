@@ -17,42 +17,6 @@ entry_point:
     mov $17, %rdx
     int $0x80
 
-    /* pid = fork() */
-    mov $7, %rax
-    int $0x80
-
-    test %rax, %rax
-    jnz parent
-
-    /* ---- child ---- */
-    mov $1, %rax
-    mov $1, %rdi
-    lea childmsg(%rip), %rsi
-    mov $13, %rdx
-    int $0x80
-
-    /* pid = getpid(); exit(pid) */
-    mov $2, %rax
-    int $0x80
-    mov %rax, %rdi
-    mov $0, %rax
-    int $0x80
-
-parent:
-    /* parent waits a bit via yields so the child prints first */
-    mov $30, %r14
-pw: mov $3, %rax
-    int $0x80
-    dec %r14
-    jnz pw
-
-    mov $1, %rax
-    mov $1, %rdi
-    lea parentmsg(%rip), %rsi
-    mov $14, %rdx
-    int $0x80
-    /* fall into the shell loop */
-
 prompt:
     mov $1, %rax
     mov $1, %rdi
@@ -71,6 +35,40 @@ read_again:
     jle idle
     mov %rax, %r12
 
+    /* try commands: "hello2" -> fork+exec /hello2 */
+    lea cmd_hello2(%rip), %rdi
+    mov %rsp, %rsi
+    mov $7, %rcx
+    repe cmpsb
+    test %rcx, %rcx
+    jnz echo_back
+
+    /* fork(); child execs /hello2 */
+    mov $7, %rax
+    int $0x80
+    test %rax, %rax
+    jnz shell_parent
+
+    /* child: execve("/hello2", 0, 0) */
+    mov $8, %rax
+    lea path_hello2(%rip), %rdi
+    xor %rsi, %rsi
+    xor %rdx, %rdx
+    int $0x80
+    /* execve failed: exit(1) */
+    mov $0, %rax
+    mov $1, %rdi
+    int $0x80
+
+shell_parent:
+    mov $40, %r14
+sw: mov $3, %rax
+    int $0x80
+    dec %r14
+    jnz sw
+    jmp prompt
+
+echo_back:
     mov $1, %rax
     mov $1, %rdi
     lea gotstr(%rip), %rsi
@@ -95,5 +93,7 @@ promptstr: .ascii "uix> "
 gotstr:    .ascii "got: "
 childmsg:  .ascii "hello from k"
 parentmsg: .ascii "hello from p\n"
+cmd_hello2: .ascii "hello2\n"
+path_hello2: .ascii "/hello2"
 
 .set STACK_TOP, 0x800000

@@ -89,6 +89,14 @@ u64 syscall_dispatch(struct iframe *fr)
         return child->pid;   /* child returns 0 via its frame copy */
     }
 
+    case SYS_execve: {
+        /* execve(path, 0, 0): flat binaries, two embedded programs */
+        const char *path = (const char *)fr->rdi;
+        extern int do_execve(struct task *t, const char *path);
+        int r = do_execve(t, path);
+        return (u64)r; /* on success this never returns to user code */
+    }
+
     case SYS_yield:
         task_yield();
         return 0;

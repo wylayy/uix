@@ -15,6 +15,7 @@
 #define SYS_close  5
 #define SYS_open   6
 #define SYS_fork   7
+#define SYS_execve 8
 
 void syscall_init(void);
 
