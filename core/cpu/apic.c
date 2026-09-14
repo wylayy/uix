@@ -102,13 +102,48 @@ static u64 calibrate_tsc(void)
 }
 
 static u64 tsc_hz;
+static int use_tsc_deadline;
 
 static void arm_timer(void)
 {
-    u64 deadline = rdtsc() + tsc_hz / 100; /* 100 Hz */
-    __asm__ volatile ("wrmsr" :
-        : "c"((u64)MSR_IA32_TSC_DEADLINE),
-          "a"((u32)deadline), "d"((u32)(deadline >> 32)));
+    if (use_tsc_deadline) {
+        u64 deadline = rdtsc() + tsc_hz / 100; /* 100 Hz */
+        __asm__ volatile ("wrmsr" :
+            : "c"((u64)MSR_IA32_TSC_DEADLINE),
+              "a"((u32)deadline), "d"((u32)(deadline >> 32)));
+    }
+    /* periodic mode re-arms itself */
+}
+
+/* CPUID.01H:ECX bit 24 = TSC-Deadline LAPIC timer support */
+static bool cpu_has_tsc_deadline(void)
+{
+    u32 eax, ebx, ecx, edx;
+    __asm__ volatile ("cpuid"
+        : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
+        : "a"(1));
+    return ecx & (1u << 24);
+}
+
+/* calibrate the LAPIC bus clock against PIT channel 2 (for the
+ * periodic fallback mode) */
+static u64 calibrate_lapic(void)
+{
+    outb(0x61, (inb(0x61) & ~0x02) | 0x01);
+    outb(PIT_CMD, 0b10110000);
+    u32 reload = 59659; /* 50 ms */
+    outb(0x42, reload & 0xFF);
+    outb(0x42, (reload >> 8) & 0xFF);
+
+    lapic_write(LAPIC_TIMER_DCR, 0x1);                /* divide by 1 */
+    lapic_write(LAPIC_TIMER_LVT, (1u << 16) | 0x20);  /* masked one-shot */
+    lapic_write(LAPIC_TIMER_ICR, 0xFFFFFFFF);
+
+    u64 start = 0xFFFFFFFF - lapic_read(LAPIC_TIMER_CCR);
+    while (!(inb(0x61) & 0x20))
+        ;
+    u64 end = 0xFFFFFFFF - lapic_read(LAPIC_TIMER_CCR);
+    return (end - start) * 20;
 }
 
 void apic_init(void)
@@ -128,19 +163,31 @@ void apic_init(void)
     /* route keyboard IRQ1 to vector 33 */
     ioapic_set_isa(IRQ_KEYBOARD, IRQ_BASE + IRQ_KEYBOARD);
 
-    /* TSC-deadline timer at 100 Hz (periodic LAPIC proved flaky on
-     * this QEMU: counter reloads but delivery stops after context
-     * switches; TSC-deadline is the well-trodden path) */
-    tsc_hz = calibrate_tsc();
-    if (tsc_hz < 1000000)
-        panic("apic: TSC calibration failed (%u)", (u32)tsc_hz);
-    apic_timer_hz = tsc_hz;
+    /* timer at 100 Hz: prefer TSC-deadline (stable on QEMU); fall back
+     * to periodic LAPIC where TSC-deadline is unsupported (VirtualBox) */
+    use_tsc_deadline = cpu_has_tsc_deadline();
 
-    lapic_write(LAPIC_TIMER_LVT, IRQ_BASE | LVT_TSC_DEADLINE);
-    arm_timer();
-
-    kprintf(KLOG_INFO "apic: TSC %u Hz, TSC-deadline timer at 100 Hz\n",
-            (u32)tsc_hz);
+    if (use_tsc_deadline) {
+        tsc_hz = calibrate_tsc();
+        if (tsc_hz < 1000000)
+            panic("apic: TSC calibration failed (%u)", (u32)tsc_hz);
+        apic_timer_hz = tsc_hz;
+        lapic_write(LAPIC_TIMER_LVT, IRQ_BASE | LVT_TSC_DEADLINE);
+        arm_timer();
+        kprintf(KLOG_INFO "apic: TSC %u Hz, TSC-deadline timer at 100 Hz\n",
+                (u32)tsc_hz);
+    } else {
+        u64 bus_hz = calibrate_lapic();
+        if (bus_hz < 100000)
+            panic("apic: LAPIC calibration failed (%u)", (u32)bus_hz);
+        apic_timer_hz = bus_hz;
+        lapic_write(LAPIC_TIMER_DCR, 0x1);                   /* divide 1 */
+        lapic_write(LAPIC_TIMER_LVT,
+                    IRQ_BASE | (1u << 17));                  /* periodic */
+        lapic_write(LAPIC_TIMER_ICR, (u32)(bus_hz / 100));   /* 100 Hz */
+        kprintf(KLOG_INFO "apic: LAPIC %u Hz, periodic timer at 100 Hz\n",
+                (u32)bus_hz);
+    }
 }
 
 /* called from isr_dispatch for vector 32 */
