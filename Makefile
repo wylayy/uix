@@ -95,7 +95,8 @@ QEMU      := qemu-system-x86_64
 QEMUFLAGS := -m 2G -serial stdio -no-reboot -no-shutdown
 
 run: iso
-	$(QEMU) $(QEMUFLAGS) -cdrom build/$(NAME).iso
+	$(QEMU) $(QEMUFLAGS) -cdrom build/$(NAME).iso \
+	    -drive file=build/rootfs.img,if=virtio,format=raw
 
 run-uefi: iso
 	$(QEMU) $(QEMUFLAGS) -bios /usr/share/OVMF/OVMF_CODE.fd \

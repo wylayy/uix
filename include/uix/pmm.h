@@ -9,6 +9,7 @@
 void pmm_init(void);
 
 paddr_t pmm_alloc(void);          /* returns 0 when out of memory */
+paddr_t pmm_alloc_pages(u64 n);   /* contiguous run of n pages */
 void pmm_free(paddr_t page);
 u64 pmm_free_pages(void);
 

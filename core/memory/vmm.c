@@ -328,3 +328,6 @@ int vmm_page_fault(u64 fault_addr, u64 err)
             (err & 16) ? "instruction-fetch" : "data");
     return -1;
 }
+
+/* debug helper for drivers */
+u64 *dbg_pml4(void) { return pml4; }

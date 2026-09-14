@@ -103,6 +103,28 @@ paddr_t pmm_alloc(void)
     return 0;
 }
 
+paddr_t pmm_alloc_pages(u64 n)
+{
+    /* first-fit run of n pages */
+    u64 run = 0;
+    for (u64 i = 0; i < bitmap_len; i++) {
+        if (is_free(i)) {
+            run++;
+            if (run == n) {
+                u64 first = i - n + 1;
+                for (u64 p = first; p <= i; p++)
+                    set_used(p);
+                free_count -= n;
+                next_free_scan = (i + 1) % bitmap_len;
+                return first << UIX_PAGE_SHIFT;
+            }
+        } else {
+            run = 0;
+        }
+    }
+    return 0;
+}
+
 void pmm_free(paddr_t page)
 {
     u64 i = page >> UIX_PAGE_SHIFT;

@@ -11,11 +11,13 @@
 #include <uix/kprintf.h>
 #include <uix/lib.h>
 #include <uix/pmm.h>
+#include <uix/pci.h>
 #include <uix/sched.h>
 #include <uix/syscall.h>
 #include <uix/task.h>
 #include <uix/tty.h>
 #include <uix/user.h>
+#include <uix/virtio_blk.h>
 #include <uix/vmm.h>
 
 static void selftest_memory(void)
@@ -86,6 +88,12 @@ void kmain(void)
     apic_init();
     keyboard_init();
     tty_init();
+    pci_scan();
+    {
+        extern int virtio_blk_selftest(void);
+        virtio_blk_init();
+        virtio_blk_selftest();
+    }
     syscall_init();
 
     task_init();
