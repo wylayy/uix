@@ -104,6 +104,8 @@ ISR 44, 0
 ISR 45, 0
 ISR 46, 0
 ISR 47, 0
+/* syscall vector */
+ISR 128, 0
 
 /* stub for vectors 48..255 (not routed; shouldn't fire) */
 .global isr_unhandled
@@ -122,8 +124,12 @@ isr_stub_table:
     .quad isr_24, isr_25, isr_26, isr_27, isr_28, isr_29, isr_30, isr_31
     .quad isr_32, isr_33, isr_34, isr_35, isr_36, isr_37, isr_38, isr_39
     .quad isr_40, isr_41, isr_42, isr_43, isr_44, isr_45, isr_46, isr_47
-    .rept 208
-    .quad isr_unhandled
+    .rept 80
+    .quad isr_unhandled          /* 48..127 */
+    .endr
+    .quad isr_128                /* syscall */
+    .rept 127
+    .quad isr_unhandled          /* 129..255 */
     .endr
 
 /* common path: save regs, call C, restore */
@@ -167,3 +173,7 @@ isr_common:
     addq $16, %rsp        /* drop int_no + err */
     iretq
 .size isr_common, . - isr_common
+
+/* syscalls use int 0x80 (IDT gate 128): the CPU switches to TSS.RSP0
+ * automatically, so no GS-base or STAR setup is needed. Handled in
+ * isr_dispatch like any other vector. */

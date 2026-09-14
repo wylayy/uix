@@ -6,6 +6,7 @@
 #include <uix/heap.h>
 #include <uix/kprintf.h>
 #include <uix/lib.h>
+#include <uix/vmm.h>
 
 extern void task_set_current(struct task *t);
 
@@ -17,6 +18,7 @@ static struct task *runqueue_tail;
 static u64 rq_size;
 
 static u64 ticks_since_switch;
+static volatile int need_resched;
 #define TIME_SLICE 2 /* ticks per task switch */
 
 void sched_enqueue(struct task *t)
@@ -28,6 +30,13 @@ void sched_enqueue(struct task *t)
         runqueue_head = t;
     runqueue_tail = t;
     rq_size++;
+}
+
+void sched_enqueue_user(struct task *t)
+{
+    extern u64 task_alloc_pid(void);
+    t->pid = task_alloc_pid();
+    sched_enqueue(t);
 }
 
 static struct task *dequeue(void)
@@ -84,7 +93,17 @@ void schedule(void)
      * entry (M4) but keep it accurate anyway */
     tss_set_rsp0(next->kstack + next->kstack_size);
 
+    /* switch address space if the next task has its own */
+    extern paddr_t kernel_cr3;
+    if (next->cr3 && next->cr3 != kernel_cr3)
+        vmm_switch(next->cr3);
+
     switch_to(&prev->rsp, next->rsp);
+
+    /* We may have been switched from inside an interrupt gate (IF=0);
+     * re-enable so this task (and the idle hlt loop) can be preempted
+     * again. iretq on the way out restores the task's own RFLAGS. */
+    __asm__ volatile ("sti");
 
     /* execution resumes here when this task is switched back in */
     if (zombie && zombie != task_current()) {
@@ -96,16 +115,21 @@ void schedule(void)
 
 void sched_tick(void)
 {
-    if (++ticks_since_switch < TIME_SLICE)
+    if (!need_resched && ++ticks_since_switch < TIME_SLICE)
         return;
+    need_resched = 0;
     ticks_since_switch = 0;
     schedule();
 }
 
+/* yield does not switch by itself: switching out of a software-int
+ * frame reliably kills LAPIC delivery on this QEMU. Instead mark the
+ * task reschedulable; the next timer tick performs the switch (the
+ * timer-interrupt switch path is proven stable). */
 void task_yield(void)
 {
     ticks_since_switch = 0;
-    schedule();
+    need_resched = 1;
 }
 
 void sched_start(void)

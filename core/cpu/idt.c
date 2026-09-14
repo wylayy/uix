@@ -59,7 +59,7 @@ void gdt_init(void)
            | (((base >> 8) & 0xFF) << 24)
            | (((base >> 16) & 0xFF) << 32)
            | ((u64)0x89 << 40)                 /* present, TSS64 */
-           | (((base >> 24) & 0xFF) << 48);
+           | (((u64)(base >> 24) & 0xFF) << 56);
     gdt[6] = base >> 32;
 
     tss.ist[IST_DF] = (u64)ist_df_stack + IST_STACK_SIZE;
@@ -136,6 +136,12 @@ void idt_init(void)
     __asm__ volatile ("lidt %0" : : "m"(idtr));
 }
 
+/* make a gate callable from ring 3 (interrupt/trap gate, DPL 3) */
+void idt_gate_set_dpl3(u8 vec)
+{
+    idt[vec].flags = 0xEE; /* present, DPL 3, interrupt gate */
+}
+
 /* ---------------- dispatch ---------------- */
 
 static void dump_frame(struct iframe *fr)
@@ -180,6 +186,11 @@ void isr_dispatch(struct iframe *fr)
     case 33: /* PS/2 keyboard */
         keyboard_irq();
         break;
+    case 128: { /* syscall (int 0x80) */
+        extern u64 syscall_dispatch(struct iframe *);
+        fr->rax = syscall_dispatch(fr);
+        break;
+    }
     default:
         break;
     }

@@ -11,6 +11,11 @@
 
 static u64 next_pid = 1;
 
+u64 task_alloc_pid(void)
+{
+    return next_pid++;
+}
+
 /* the task we are currently executing (bootstrap task set by sched_init) */
 static struct task *current;
 
@@ -30,7 +35,7 @@ static struct task *task_alloc(const char *name)
         return NULL;
     }
     t->kstack_size = KSTACK_SIZE;
-    t->pid = next_pid++;
+    t->pid = task_alloc_pid();
     t->name = name;
     t->state = TASK_READY;
     return t;
@@ -90,3 +95,5 @@ u64 task_count(void)
 {
     return next_pid - 1;
 }
+
+/* declared in user.h semantics; keeps task.c the pid owner */

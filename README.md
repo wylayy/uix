@@ -5,7 +5,7 @@ x86_64, [Limine](https://github.com/limine-bootloader/limine) boot protocol.
 
 Licensed under the GNU GPL v3 (or later): see [LICENSE](LICENSE).
 
-## Status: M3 (scheduler)
+## Status: M4 (userspace)
 
 - Boots (BIOS + UEFI) via Limine, higher-half kernel at `0xffffffff80100000`
 - Serial console (16550 UART) + framebuffer console (8x8 font, double-scanned)
@@ -18,8 +18,9 @@ Licensed under the GNU GPL v3 (or later): see [LICENSE](LICENSE).
 - VMM: page tables cloned from Limine then switched (own CR3),
   map/unmap/translate (4KiB and 2MiB leaves), page fault decode
 - Kernel heap: kmalloc/kfree/kzalloc, first-fit with coalescing
-- Preemptive round-robin scheduler, context switch, kernel tasks
-  with per-task stacks, zombie reaping, boot self-test
+- Preemptive round-robin scheduler with per-task stacks
+- Ring 3 userspace: per-task address spaces, int 0x80 syscalls
+  (`exit/write/getpid/yield`), embedded demo program
 
 ```
 uix v0.1: microkernel + POSIX personality
@@ -30,7 +31,7 @@ uix v0.1: microkernel + POSIX personality
 
 | M | Scope |
 |---|-------|
-| M4 | IPC ports, ring 3, ELF loader, syscalls |
+| M5 | POSIX personality: VFS, ramfs/devfs, fd table, fork/execve (static ELF) |
 | M5 | POSIX personality: VFS, ramfs/devfs, fd table, fork/execve (static ELF) |
 | M6 | drivers: PCI enum, virtio-blk, NVMe/USB later |
 
@@ -51,7 +52,7 @@ make clean
 
 ```
 boot/        Limine protocol parsing + vendored bootloader binaries
-core/        layer 1: kernel core (lib, console, kprintf, kmain → cpu/memory/ipc)
+core/        layer 1: kernel core (lib, console, kprintf, kmain -> cpu/memory/ipc)
 personality/ layer 2: POSIX/BSD (M5+)
 drivers/     layer 3: I/O (serial now; pci/storage later)
 arch/x86_64/ entry.S, ISA-specific code

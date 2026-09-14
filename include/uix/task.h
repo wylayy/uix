@@ -16,9 +16,10 @@ struct task {
     u64 rsp;          /* saved kernel stack pointer */
     u64 kstack;       /* kernel stack base (kmalloc'd) */
     u64 kstack_size;
+    paddr_t cr3;      /* 0 = share the kernel space */
     int state;
+    int is_user;
     const char *name;
-    /* M4 fields (userspace, IPC) land here */
     struct task *next; /* runqueue link */
 };
 

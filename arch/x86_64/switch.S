@@ -37,3 +37,34 @@ task_entry_trampoline:
     call task_exit        /* fn returned: terminate */
     hlt
 .size task_entry_trampoline, . - task_entry_trampoline
+
+/* ---------------- ring-3 entry ---------------- */
+
+/* first run of a user task: r12=rip, r13=rsp, r14=rflags */
+.global user_launch_trampoline
+.type user_launch_trampoline, @function
+user_launch_trampoline:
+    movq %r12, %rdi
+    movq %r13, %rsi
+    movq %r14, %rdx
+    call user_enter
+    hlt                        /* never returns */
+.size user_launch_trampoline, . - user_launch_trampoline
+
+/* enter ring 3 via iretq with a hand-built interrupt frame */
+.global user_enter
+.type user_enter, @function
+user_enter:
+    cli
+    pushq $0x23                /* SS (user data) */
+    pushq %rsi                 /* RSP */
+    pushq %rdx                 /* RFLAGS */
+    pushq $0x1b                /* CS (user code) */
+    pushq %rdi                 /* RIP */
+    mov $0x23, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    mov %ax, %fs
+    mov %ax, %gs
+    iretq
+.size user_enter, . - user_enter

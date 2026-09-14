@@ -24,6 +24,7 @@ DIRS     := build build/iso build/iso/boot build/iso/uix
 SRCS_C   := $(shell find boot core personality drivers -name '*.c' \
             -not -path 'boot/limine/*' 2>/dev/null)
 SRCS_S   := $(shell find arch -name '*.S' 2>/dev/null)
+
 OBJS     := $(patsubst %.c,build/%.o,$(SRCS_C)) \
             $(patsubst %.S,build/%.o,$(SRCS_S))
 
@@ -38,12 +39,25 @@ build/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
-build/%.o: %.S
+# userprog.o embeds program.bin via .incbin: force it to recompile
+# whenever the binary changes (order-only prerequisite + explicit rule)
+build/arch/x86_64/userprog.o: arch/x86_64/userprog.S build/user/program.bin
 	@mkdir -p $(dir $@)
 	$(CC) $(ASFLAGS) -c $< -o $@
 
+build/user/program.bin: user/program.S
+	@mkdir -p $(dir $@)
+	$(CC) -c user/program.S -o build/user/program.o
+	$(LD) -Ttext=0 -o build/user/program.elf build/user/program.o
+	objcopy -O binary build/user/program.elf $@
+
 build/$(NAME).elf: $(OBJS) tools/linker.ld
 	$(LD) $(LDFLAGS) -T tools/linker.ld $(OBJS) -o $@
+
+# rebuild any other .S through the pattern rule below
+build/%.o: %.S
+	@mkdir -p $(dir $@)
+	$(CC) $(ASFLAGS) -c $< -o $@
 
 # host tool, built with plain host gcc (not the freestanding kernel flags)
 boot/limine/limine-install: boot/limine/limine-install.c boot/limine/limine-bios-hdd.h
@@ -79,7 +93,7 @@ run-uefi: iso
 
 debug: iso
 	$(QEMU) $(QEMUFLAGS) -cdrom build/$(NAME).iso -s -S &
-	@echo "gdb build/uix.elf  →  target remote localhost:1234"
+	@echo "gdb build/uix.elf  ->  target remote localhost:1234"
 
 # ---------------- housekeeping ----------------
 

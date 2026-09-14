@@ -12,6 +12,9 @@ void sched_start(void) __attribute__((noreturn));
 /* queue a task on the runqueue */
 void sched_enqueue(struct task *t);
 
+/* queue a user task (assigns a pid) */
+void sched_enqueue_user(struct task *t);
+
 /* pick the next task and switch to it (called from tick or yield) */
 void schedule(void);
 

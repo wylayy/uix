@@ -158,6 +158,28 @@ static void load_cr3(paddr_t pa)
     __asm__ volatile ("mov %0, %%cr3" : : "r"(pa) : "memory");
 }
 
+void vmm_switch(paddr_t pml4_pa)
+{
+    pml4 = pmm_phys_to_virt(pml4_pa);
+    load_cr3(pml4_pa);
+}
+
+paddr_t vmm_create_space(void)
+{
+    /* fresh PML4 that shares every kernel-half (>= 0xffff800000000000)
+     * entry with the current kernel space */
+    paddr_t dst_pa = pmm_alloc();
+    if (!dst_pa)
+        panic("vmm: OOM creating address space");
+    u64 *dst = pmm_phys_to_virt(dst_pa);
+    memset(dst, 0, UIX_PAGE_SIZE);
+
+    for (int i = 256; i < 512; i++)
+        dst[i] = pml4[i];
+
+    return dst_pa;
+}
+
 static u64 clone_table(u64 src_entry, int level)
 {
     /* returns the physical address of the cloned table */
@@ -185,6 +207,9 @@ static u64 clone_table(u64 src_entry, int level)
     return dst;
 }
 
+/* kernel address space (clone target), exported for the scheduler */
+paddr_t kernel_cr3;
+
 void vmm_init(void)
 {
     /* Clone the page tables Limine left active, then switch to the clone.
@@ -197,6 +222,7 @@ void vmm_init(void)
 
     paddr_t pml4_pa = clone_table(cr3, 3);
     pml4 = pmm_phys_to_virt(pml4_pa);
+    kernel_cr3 = pml4_pa;
 
     load_cr3(pml4_pa);
 

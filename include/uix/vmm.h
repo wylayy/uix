@@ -15,6 +15,11 @@
 
 void vmm_init(void);
 
+/* create a new address space that shares the kernel half; returns the
+ * PML4 physical address */
+paddr_t vmm_create_space(void);
+void vmm_switch(paddr_t pml4_pa);
+
 /* map one 4KiB page: va and pa must be page-aligned */
 void vmm_map(u64 va, paddr_t pa, u64 flags);
 void vmm_unmap(u64 va);
