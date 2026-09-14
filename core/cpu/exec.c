@@ -92,8 +92,14 @@ static u64 build_user_stack(const char *path)
 
 /* called from the syscall dispatcher; on success the task never
  * returns to the old image (fresh user_launch trampoline) */
-int do_execve(struct task *t, const char *path)
+int do_execve(struct task *t, const char *upath)
 {
+    /* copy the user path first: it dies with the old address space */
+    char path[64];
+    for (u32 i = 0; i < 63 && upath[i]; i++)
+        path[i] = upath[i];
+    path[63] = 0;
+
     const u8 *img = NULL;
     u64 len = 0;
 

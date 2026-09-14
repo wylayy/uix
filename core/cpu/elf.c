@@ -23,6 +23,10 @@ u64 elf_load(const void *img, u64 len)
     if (eh->phnum == 0 || eh->phentsize < sizeof(struct elf64_phdr))
         return 0;
 
+    /* sanity: the program header table must fit inside the image */
+    if (eh->phoff + (u64)eh->phnum * eh->phentsize > len)
+        return 0;
+
     const struct elf64_phdr *ph =
         (const void *)((const u8 *)img + eh->phoff);
 

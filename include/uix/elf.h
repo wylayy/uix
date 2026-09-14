@@ -14,7 +14,8 @@ struct elf64_ehdr {
     u16 type, machine;
     u32 version;
     u64 entry, phoff, shoff;
-    u32 flags, ehsize, phentsize, phnum, shentsize, shnum, shstrndx;
+    u32 flags;
+    u16 ehsize, phentsize, phnum, shentsize, shnum, shstrndx;
 } __attribute__((packed));
 
 struct elf64_phdr {
