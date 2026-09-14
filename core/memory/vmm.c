@@ -210,6 +210,68 @@ static u64 clone_table(u64 src_entry, int level)
 /* kernel address space (clone target), exported for the scheduler */
 paddr_t kernel_cr3;
 
+/* ---- fork: deep-copy the user half with COW marking ---- */
+
+#define COW_MARK (1ull << 9) /* PTE "available0" bit: our COW marker */
+
+/* copy one table level; for PT leaves: share the physical page and
+ * strip W (and set our marker) on user pages, both in src and dst */
+static void fork_table(u64 *src, u64 *dst, int level)
+{
+    for (int i = 0; i < 512; i++) {
+        u64 e = src[i];
+        if (!(e & VMM_PRESENT)) {
+            dst[i] = 0;
+            continue;
+        }
+
+        if (level == 0 || (level == 1 && (e & PDE_PS))) {
+            /* leaf: share the page; user pages become COW */
+            if (e & VMM_USER) {
+                u64 cow = (e & ~VMM_WRITE) | COW_MARK;
+                src[i] = cow; /* parent loses write too */
+                dst[i] = cow;
+            } else {
+                dst[i] = e; /* kernel pages: share as-is */
+            }
+        } else {
+            paddr_t t = pmm_alloc();
+            if (!t)
+                panic("vmm: OOM forking tables");
+            u64 *nd = pmm_phys_to_virt(t);
+            memset(nd, 0, UIX_PAGE_SIZE);
+            fork_table(pmm_phys_to_virt(e & PTE_MASK), nd, level - 1);
+            dst[i] = t | (e & 0xFFF);
+        }
+    }
+}
+
+paddr_t vmm_fork_user_space(void)
+{
+    /* called with the parent's CR3 active; pml4 points at it */
+    paddr_t dst_pa = pmm_alloc();
+    if (!dst_pa)
+        panic("vmm: OOM forking PML4");
+    u64 *dst = pmm_phys_to_virt(dst_pa);
+    memset(dst, 0, UIX_PAGE_SIZE);
+
+    /* kernel half (256..511) shared via direct copy of the pointers */
+    for (int i = 256; i < 512; i++)
+        dst[i] = pml4[i];
+
+    /* user half: deep copy with COW */
+    for (int i = 0; i < 256; i++) {
+        if (pml4[i] & VMM_PRESENT) {
+            paddr_t t = pmm_alloc();
+            u64 *nd = pmm_phys_to_virt(t);
+            memset(nd, 0, UIX_PAGE_SIZE);
+            fork_table(pmm_phys_to_virt(pml4[i] & PTE_MASK), nd, 2);
+            dst[i] = t | (pml4[i] & 0xFFF);
+        }
+    }
+    return dst_pa;
+}
+
 void vmm_init(void)
 {
     /* Clone the page tables Limine left active, then switch to the clone.
@@ -230,14 +292,39 @@ void vmm_init(void)
             (void *)pml4_pa);
 }
 
-void vmm_page_fault(u64 fault_addr, u64 err)
+int vmm_page_fault(u64 fault_addr, u64 err)
 {
-    /* COW handling arrives in M5 (fork); for now just report */
+    /* COW: user write to a present read-only marked page -> copy it.
+     * The current space is the faulting task's (scheduler switched). */
+    if ((err & 3) == 3 && (fault_addr < 0x0000800000000000ULL)) {
+        u64 va = fault_addr & ~(UIX_PAGE_SIZE - 1);
+        u64 *pt = pt_for(va, false);
+        if (pt) {
+            u64 pte = pt[PT_IDX(va)];
+            if ((pte & VMM_PRESENT) && (pte & COW_MARK) &&
+                (pte & VMM_USER)) {
+                paddr_t newp = pmm_alloc();
+                if (!newp)
+                    panic("vmm: OOM in COW fault");
+                /* copy the old page content through the HHDM */
+                memcpy(pmm_phys_to_virt(newp),
+                       pmm_phys_to_virt(pte & PTE_MASK),
+                       UIX_PAGE_SIZE);
+                pt[PT_IDX(va)] = (newp & PTE_MASK)
+                               | VMM_PRESENT | VMM_WRITE | VMM_USER
+                               | (pte & VMM_NOEXEC);
+                __asm__ volatile ("invlpg (%0)" : : "r"(fault_addr) : "memory");
+                return 0; /* handled: retry the faulting write */
+            }
+        }
+    }
+
+    /* not a COW fault we can fix: report (isr_dispatch panics next) */
     kprintf(KLOG_ERR "page fault: addr=%p err=%p %s%s%s%s\n",
             (void *)fault_addr, (void *)err,
             (err & 1) ? "present " : "non-present ",
             (err & 2) ? "write " : "read ",
             (err & 4) ? "user " : "kernel ",
             (err & 16) ? "instruction-fetch" : "data");
-    /* let the generic panic path finish the dump */
+    return -1;
 }

@@ -160,8 +160,9 @@ void isr_dispatch(struct iframe *fr)
         if (fr->int_no == 14) {
             u64 cr2;
             __asm__ volatile ("mov %%cr2, %0" : "=r"(cr2));
-            extern void vmm_page_fault(u64, u64);
-            vmm_page_fault(cr2, fr->err);
+            extern int vmm_page_fault(u64, u64);
+            if (vmm_page_fault(cr2, fr->err) == 0)
+                return; /* handled (COW): retry */
         }
         kprintf(KLOG_ERR "exception %u (%s) in ring %u\n",
                 (u32)fr->int_no,

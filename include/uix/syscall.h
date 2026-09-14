@@ -14,6 +14,7 @@
 #define SYS_read   4
 #define SYS_close  5
 #define SYS_open   6
+#define SYS_fork   7
 
 void syscall_init(void);
 

@@ -68,3 +68,28 @@ user_enter:
     mov %ax, %gs
     iretq
 .size user_enter, . - user_enter
+
+/* fork child: entered from switch_to with the copied iframe below.
+ * Mimics returning from isr_dispatch: pop 15 GPRs, skip int_no+err,
+ * iretq back to ring 3. */
+.global fork_child_stub
+.type fork_child_stub, @function
+fork_child_stub:
+    popq %rax
+    popq %rcx
+    popq %rdx
+    popq %rbx
+    popq %rbp
+    popq %rsi
+    popq %rdi
+    popq %r8
+    popq %r9
+    popq %r10
+    popq %r11
+    popq %r12
+    popq %r13
+    popq %r14
+    popq %r15
+    addq $16, %rsp        /* int_no + err */
+    iretq
+.size fork_child_stub, . - fork_child_stub

@@ -81,6 +81,14 @@ u64 syscall_dispatch(struct iframe *fr)
         return proc_fd_alloc(t, FD_CONSOLE_IN); /* console is rdwr */
     }
 
+    case SYS_fork: {
+        extern struct task *do_fork(struct task *, struct iframe *);
+        struct task *child = do_fork(t, fr);
+        if (!child)
+            return (u64)-12; /* -ENOMEM */
+        return child->pid;   /* child returns 0 via its frame copy */
+    }
+
     case SYS_yield:
         task_yield();
         return 0;

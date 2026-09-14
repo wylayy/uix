@@ -17,8 +17,43 @@ entry_point:
     mov $17, %rdx
     int $0x80
 
+    /* pid = fork() */
+    mov $7, %rax
+    int $0x80
+
+    test %rax, %rax
+    jnz parent
+
+    /* ---- child ---- */
+    mov $1, %rax
+    mov $1, %rdi
+    lea childmsg(%rip), %rsi
+    mov $13, %rdx
+    int $0x80
+
+    /* pid = getpid(); exit(pid) */
+    mov $2, %rax
+    int $0x80
+    mov %rax, %rdi
+    mov $0, %rax
+    int $0x80
+
+parent:
+    /* parent waits a bit via yields so the child prints first */
+    mov $30, %r14
+pw: mov $3, %rax
+    int $0x80
+    dec %r14
+    jnz pw
+
+    mov $1, %rax
+    mov $1, %rdi
+    lea parentmsg(%rip), %rsi
+    mov $14, %rdx
+    int $0x80
+    /* fall into the shell loop */
+
 prompt:
-    /* print "uix> " */
     mov $1, %rax
     mov $1, %rdi
     lea promptstr(%rip), %rsi
@@ -26,7 +61,6 @@ prompt:
     int $0x80
 
 read_again:
-    /* line = read(0, rsp, 128); n in rax -> save in r12 */
     mov $4, %rax
     xor %rdi, %rdi
     mov %rsp, %rsi
@@ -37,7 +71,6 @@ read_again:
     jle idle
     mov %rax, %r12
 
-    /* echo it back: write(1, "got: ", 5) then n bytes of the line */
     mov $1, %rax
     mov $1, %rdi
     lea gotstr(%rip), %rsi
@@ -52,7 +85,6 @@ read_again:
     jmp prompt
 
 idle:
-    /* nothing yet: yield, retry WITHOUT reprinting the prompt */
     mov $3, %rax
     int $0x80
     jmp read_again
@@ -61,5 +93,7 @@ idle:
 banner:    .ascii "uix echo!\nready:\n"
 promptstr: .ascii "uix> "
 gotstr:    .ascii "got: "
+childmsg:  .ascii "hello from k"
+parentmsg: .ascii "hello from p\n"
 
 .set STACK_TOP, 0x800000
