@@ -34,6 +34,11 @@ static struct tss tss;
 extern u8 ist_df_stack[], ist_nmi_stack[], ist_pf_stack[];
 #define IST_STACK_SIZE 16384
 
+void tss_set_rsp0(u64 rsp)
+{
+    tss.rsp0 = rsp;
+}
+
 void gdt_init(void)
 {
     /* code: present, DPL0, executable, readable, L=1 */
@@ -161,13 +166,17 @@ void isr_dispatch(struct iframe *fr)
     }
 
     extern void apic_eoi(void);
-    extern void apic_timer_tick(void);
     extern void keyboard_irq(void);
 
     switch (fr->int_no) {
-    case 32: /* LAPIC timer */
-        apic_timer_tick();
-        break;
+    case 32: /* LAPIC timer: EOI first, because schedule() may switch
+              * away from this interrupt frame and never return to it */
+        apic_eoi();
+        extern void apic_timer_tick(void);
+        extern void sched_tick(void);
+        apic_timer_tick(); /* jiffies++ and rearm (TSC-deadline) */
+        sched_tick();
+        return; /* do not EOI twice */
     case 33: /* PS/2 keyboard */
         keyboard_irq();
         break;

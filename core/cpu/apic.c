@@ -21,6 +21,11 @@
 #define LAPIC_TIMER_CCR 0x390
 #define LAPIC_TIMER_DCR 0x3E0
 
+#define MSR_IA32_TSC_DEADLINE 0x660
+
+/* TSC-deadline mode: LVT bit 18, one-shot armed via MSR */
+#define LVT_TSC_DEADLINE (1u << 18)
+
 /* IOAPIC (default address; MADT parsing replaces this in M6) */
 #define IOAPIC_BASE 0xFEC00000
 #define IOAPIC_REG_SELECT 0x00
@@ -42,6 +47,13 @@
 
 u64 apic_timer_hz;
 volatile u64 jiffies;
+
+static u64 rdtsc(void)
+{
+    u32 lo, hi;
+    __asm__ volatile ("rdtsc" : "=a"(lo), "=d"(hi));
+    return ((u64)hi << 32) | lo;
+}
 
 static volatile u32 *lapic;
 
@@ -72,38 +84,31 @@ static void ioapic_set_isa(u8 isa_irq, u8 vec)
     ioapic[IOAPIC_REG_WINDOW / 4] = 0;
 }
 
-/* count LAPIC ticks during one PIT period, then scale to ticks/second.
- * PIT channel 0, mode 2 (rate generator), divisor 59659 -> ~20 Hz period
- * (50 ms). We poll the LAPIC CCR until the PIT IRQ0 would have fired by
- * counting PIT channel 0 down to zero via port reads is not possible, so
- * instead we busy-wait on TSC for a fixed count derived from a 50 ms PIT
- * one-shot on channel 2, the only channel with a readable gate (port 0x61). */
-static u64 calibrate(void)
+/* calibrate the TSC against PIT channel 2 (one-shot 50 ms gate) */
+static u64 calibrate_tsc(void)
 {
-    /* PIT channel 2: one-shot, gate on, speaker off */
     outb(0x61, (inb(0x61) & ~0x02) | 0x01);
     outb(PIT_CMD, 0b10110000); /* ch2, lo/hi, mode 0 */
-    /* 23863 * 3 ~= 71591 Hz for 50ms: use 11932 for ~10ms granularity x5 */
-    u32 reload = 59659; /* 50 ms */
+    u32 reload = 59659;        /* 50 ms */
     outb(0x42, reload & 0xFF);
     outb(0x42, (reload >> 8) & 0xFF);
 
-    /* LAPIC timer: one-shot, max count, masked (divide by 1 throughout) */
-    lapic_write(LAPIC_TIMER_DCR, 0x1);
-    lapic_write(LAPIC_TIMER_LVT, (1u << 16) | 0x20);
-    lapic_write(LAPIC_TIMER_ICR, 0xFFFFFFFF);
-
-    u64 start = 0xFFFFFFFF - lapic_read(LAPIC_TIMER_CCR);
-
-    /* wait until PIT ch2 OUT pin (bit 5 of port 0x61) goes high */
+    u64 t0 = rdtsc();
     while (!(inb(0x61) & 0x20))
         ;
+    u64 t1 = rdtsc();
 
-    u64 end = 0xFFFFFFFF - lapic_read(LAPIC_TIMER_CCR);
-    u64 ticks = end - start;
-    if (!ticks)
-        return 0;
-    return ticks * 20; /* 50ms -> 1s */
+    return (t1 - t0) * 20; /* TSC ticks per second */
+}
+
+static u64 tsc_hz;
+
+static void arm_timer(void)
+{
+    u64 deadline = rdtsc() + tsc_hz / 100; /* 100 Hz */
+    __asm__ volatile ("wrmsr" :
+        : "c"((u64)MSR_IA32_TSC_DEADLINE),
+          "a"((u32)deadline), "d"((u32)(deadline >> 32)));
 }
 
 void apic_init(void)
@@ -123,25 +128,24 @@ void apic_init(void)
     /* route keyboard IRQ1 to vector 33 */
     ioapic_set_isa(IRQ_KEYBOARD, IRQ_BASE + IRQ_KEYBOARD);
 
-    /* calibrate and start periodic timer at 100 Hz */
-    u64 hz = calibrate();
-    if (hz < 100000)
-        hz = 128000000; /* calibration failed: assume QEMU-ish 128MHz */
-    apic_timer_hz = hz;
+    /* TSC-deadline timer at 100 Hz (periodic LAPIC proved flaky on
+     * this QEMU: counter reloads but delivery stops after context
+     * switches; TSC-deadline is the well-trodden path) */
+    tsc_hz = calibrate_tsc();
+    if (tsc_hz < 1000000)
+        panic("apic: TSC calibration failed (%u)", (u32)tsc_hz);
+    apic_timer_hz = tsc_hz;
 
-    /* QEMU ignores the DCR divide setting, so use divide-by-1 and program
-     * the ICR directly: period = ICR / clk. hz was measured on the same
-     * (undivided) clock during calibration. */
-    lapic_write(LAPIC_TIMER_DCR, 0x1);                    /* divide by 1 */
-    lapic_write(LAPIC_TIMER_LVT, IRQ_BASE | (1u << 17));  /* vector 32, periodic */
-    lapic_write(LAPIC_TIMER_ICR, (u32)(hz / 100));        /* 100 Hz */
+    lapic_write(LAPIC_TIMER_LVT, IRQ_BASE | LVT_TSC_DEADLINE);
+    arm_timer();
 
-    kprintf(KLOG_INFO "apic: timer %u Hz, tick %u, uptime base set\n",
-            (u32)hz, (u32)(hz / 128 / 100));
+    kprintf(KLOG_INFO "apic: TSC %u Hz, TSC-deadline timer at 100 Hz\n",
+            (u32)tsc_hz);
 }
 
 /* called from isr_dispatch for vector 32 */
 void apic_timer_tick(void)
 {
     jiffies++;
+    arm_timer(); /* TSC-deadline is one-shot: rearm every tick */
 }

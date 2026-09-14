@@ -11,6 +11,8 @@
 #include <uix/kprintf.h>
 #include <uix/lib.h>
 #include <uix/pmm.h>
+#include <uix/sched.h>
+#include <uix/task.h>
 #include <uix/vmm.h>
 
 static void selftest_memory(void)
@@ -65,6 +67,44 @@ static void selftest_memory(void)
             (u32)pmm_free_pages());
 }
 
+/* ---- M3 demo tasks ---- */
+
+static volatile u32 task_a_count, task_b_count;
+
+static void demo_task_a(void *arg)
+{
+    (void)arg;
+    for (int i = 0; i < 5; i++) {
+        kprintf("A%d ", i);
+        task_a_count++;
+        /* busy loop: proves preemption (no yield, no hlt) */
+        for (volatile int j = 0; j < 4000000; j++)
+            ;
+    }
+}
+
+static void demo_task_b(void *arg)
+{
+    (void)arg;
+    for (int i = 0; i < 5; i++) {
+        kprintf("B%d ", i);
+        task_b_count++;
+        for (volatile int j = 0; j < 4000000; j++)
+            ;
+    }
+}
+
+static void demo_task_report(void *arg)
+{
+    (void)arg;
+    /* waits (by polling) until both loops finish, then reports */
+    while (task_a_count < 5 || task_b_count < 5)
+        task_yield();
+    kprintf(KLOG_INFO "tasks done: A=%u B=%u, free pages %u\n",
+            task_a_count, task_b_count, (u32)pmm_free_pages());
+    kprintf(KLOG_INFO "M3: preemptive scheduler with round-robin works.\n");
+}
+
 void kmain(void)
 {
     console_init();
@@ -77,22 +117,18 @@ void kmain(void)
     apic_init();
     keyboard_init();
 
+    task_init();
+    sched_init();
+    task_create("A", demo_task_a, NULL);
+    task_create("B", demo_task_b, NULL);
+    task_create("report", demo_task_report, NULL);
+
     __asm__ volatile ("sti");
 
     kprintf("\n");
     kprintf("uix v%d.%d: microkernel + POSIX personality\n", 0, 1);
-    kprintf(KLOG_INFO "M2: PMM, VMM (own CR3), heap, self-test.\n");
+    kprintf(KLOG_INFO "M3: scheduler, context switch, kernel tasks.\n");
 
-    /* exception self-test (deliberate #UD): uncomment to see the dump path
-     * __asm__ volatile ("ud2"); */
-
-    u64 last = 0;
-    for (;;) {
-        __asm__ volatile ("hlt");
-        if (jiffies - last >= 100) {
-            last = jiffies;
-            kprintf(KLOG_INFO "uptime: %u s, free pages %u\n",
-                    (u32)(jiffies / 100), (u32)pmm_free_pages());
-        }
-    }
+    /* becomes the idle loop once all tasks block/exit */
+    sched_start();
 }
